@@ -9,12 +9,31 @@ contract MultiSigWallet{
       uint confirmations;
    }
 
-   Transaction[] public transactions; //array of struct Transaction
-
+   Transaction[] public transactions; 
    address[] public owners;
    uint public requiredConfirmations;
-   mapping(address => bool) public uniqueOwners;
+   mapping(address => bool) public isOwner;
+   mapping (uint => mapping(address => bool)) public isConfirmed;
 
+   modifier checkOwner(){
+      require(isOwner[msg.sender], "not an owner");
+      _;
+   }
+
+   modifier txExists(uint _txID){
+      require(transactions[_txId].recipient != 0,"Transaction does not exist");
+      _;
+   }
+
+   modifier txExecuted(uint _txID){
+      require(!transactions[_txID].executed, "Transaction already executed");
+      _;
+   }
+
+   modifier txConfirmed(uint _txID) {
+      require(!isConfirmed[_txID][msg.sender], "Transaction already confirmed by this owner");
+      _;
+   }
 
    /// @dev Constructor
    constructor (address[] memory _owners, uint _requiredConfirmations) public {
@@ -25,12 +44,14 @@ contract MultiSigWallet{
          address owner = _owners[i];
 
          owners.push(owner);
-         uniqueOwners[owner] = true;
+         isOwner[owner] = true;
       }
       requiredConfirmations = _requiredConfirmations;
    }
 
-   function submitTransaction(address _recipient, uint _value, bytes _data) public returns(uint){
+   function submitTransaction(address _recipient, uint _value, bytes _data) public 
+      checkOwner returns(uint)
+   {
       transactions.push(
          Transaction({
             recipient: _recipient,
@@ -44,19 +65,59 @@ contract MultiSigWallet{
       )
    }
 
-   function confirmTransaction(uint _txID) public{
-      if(isConfirmed(_txID)) {
-      transactions[_txID].confirmations += 1;
-      }
+   function confirmTransaction(uint _txID) public 
+      checkOwner
+      txExists(_txID)
+      txExecuted(_txID)
+      txConfirmed(_txID)
+   {
+   
+      Transation storage transaction = transactions[_txID]
+      transaction[_txID].confirmations += 1;
+      isConfirmed[_txID][msg.sender] =true;
+      
    }
 
-   function executeTransaction(uint _txID) public {
+   function executeTransaction(uint _txID) public 
+      checkOwner
+      txExists(_txID)
+      txExecuted(_txID)
+      txConfirmed(_txID)
+   {
       require(transactions[_txID].confirmations >= requiredConfirmations, "Not enough confirmations")
       transactions[_txID].executed = true;
    }
 
-   function isConfirmed(uint _txID, address _caller) internal constant returns(bool) {
-      require(!transactions[_txID].executed,"transaction already executed");
-      return true;
+   function revokeConfirmation(uint _txID) public
+      checkOwner
+      txExists(_txID)
+      txExecuted(_txID)
+      txConfirmed(_txID)
+   {
+      require (isConfirmed[_txID][msg.sender],"Transaction not confirmed")
+      transactions[_txID].confirmations -= 1;
+      isConfirmed[_txID][msg.sender] = false;
+   }
+
+   function getOwners() public view returns(address[] memory){
+      return owners;
+   }
+
+   function getTransaction() public view returns(
+      address recipient,
+      uint value,
+      bytes data,
+      bool executed,
+      uint confirmations
+   )
+   {
+      Transaction storage transaction = transactions[_txID]
+      return(
+         transaction.recipient,
+         transaction.value,
+         transaction.data,
+         transaction.executed,
+         transaction.confirmations,
+      );      
    }
 }
